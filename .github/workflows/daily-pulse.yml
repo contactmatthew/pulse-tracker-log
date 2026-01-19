@@ -2,43 +2,45 @@ name: Daily Pulse
 
 on:
   schedule:
-    # Run daily at 00:00 UTC
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * *' # Daily at midnight UTC
   workflow_dispatch: # Allow manual triggering
 
+permissions:
+  contents: write
+
 jobs:
-  update-log:
+  daily-pulse:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Configure Git
         run: |
-          git config --local user.email "${{ github.actor }}@users.noreply.github.com"
-          git config --local user.name "${{ github.actor }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Get current UTC timestamp
-        id: timestamp
+      - name: Append timestamp to log
         run: |
-          echo "timestamp=$(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          echo "- $TIMESTAMP" >> log.md
 
-      - name: Append timestamp to log.md
+      - name: Commit changes
+        id: commit
         run: |
-          echo "- ${{ steps.timestamp.outputs.timestamp }}" >> log.md
-
-      - name: Commit and push changes
-        run: |
-          git add log.md
-          if git diff --staged --quiet; then
+          if [ -n "$(git status --porcelain)" ]; then
+            git add log.md
+            git commit -m "Daily pulse: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            echo "committed=true" >> $GITHUB_OUTPUT
+          else
             echo "No changes to commit"
-            exit 0
+            echo "committed=false" >> $GITHUB_OUTPUT
           fi
-          git commit -m "Daily pulse: ${{ steps.timestamp.outputs.timestamp }}"
-          git push
+
+      - name: Push changes
+        if: steps.commit.outputs.committed == 'true'
+        run: |
+          git push origin HEAD:main
